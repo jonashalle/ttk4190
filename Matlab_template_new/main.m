@@ -1,0 +1,148 @@
+% Project in TTK4190 Guidance, Navigation and Control of Vehicles 
+%
+% Author:           My name
+% Study program:    My study program
+clear;
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% USER INPUTS
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+h  = 0.1;    % sampling time [s]
+Ns = 10000;    % no. of samples
+
+psi_ref = 10 * pi/180;  % desired yaw angle (rad)
+U_ref   = 7;            % desired surge speed (m/s)
+
+% initial states
+eta = [0 0 0]';  %Posisjon
+nu  = [0.1 0 0]'; %Hastighet
+delta = 0;
+n = 0;
+x = [nu' eta' delta n]';
+
+%Constants
+rho_a = 1.247;
+Vc = 1;
+Bv_c = 45;
+Bv_w = 135;
+Vw = 10;
+Loa = 161;
+ALw = 10*Loa;
+
+% PID controller
+omega_b = 0.06;
+zeta = 1;
+T = 169.546;
+K = 0.0075;
+m = T/K;
+d = 1/K;
+omega_n = 1/(sqrt(1-2*zeta^2+sqrt(4*zeta^4-4*zeta^2+2)))*omega_b;
+kp = m*omega_n^2;
+ki = omega_n/10*kp;
+kd = 2*zeta*omega_n*m-d;
+pid_params = [kp ki kd];
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% MAIN LOOP
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+simdata = zeros(Ns+1,14);       % table of simulation data
+tau_wind = [0 0 0]';
+yaw_last = 0;
+yaw_int = 0;
+for i=1:Ns+1
+    
+    t = (i-1) * h;              % time (s)
+    
+    % current disturbance
+    
+    uc = cosd(Bv_c)*Vc;
+    vc = sind(Bv_c)*Vc;
+    nu_c = [ uc vc 0 ]';
+    
+    % wind disturbance
+    if t > 200
+    
+
+    uw = Vw*cosd(Bv_w-x(6));
+    vw = Vw*sind(Bv_w-x(6));
+    u_rw = x(1)-uw;
+    v_rw = x(2)-vw;
+    Vrw = sqrt(u_rw^2+v_rw^2);
+
+    gamma_rw = -atan2(v_rw,u_rw);
+    C_Y = 0.95*sin(gamma_rw);
+    C_N = 0.15*sin(2*gamma_rw);
+    
+    Ywind = C_Y*ALw;
+    Nwind = C_N*ALw*Loa;
+    
+    tau_wind = 0.5*rho_a*Vrw^2*[0 Ywind Nwind]';
+    end
+    
+    
+    % reference models
+    psi_d = psi_ref;
+    r_d = 0;
+    u_d = U_ref;
+        
+    % control law
+    yaw_ref = psi_ref;
+    yaw = x(6);
+    yaw_bar = yaw_ref-yaw;
+    yaw_dot = (yaw-yaw_last)/h;
+    yaw_int = yaw_int + yaw_bar*h;
+    n_c = 10;                   % propeller speed (rps)
+    delta_c = -(-kp*yaw_bar-kd*yaw_dot-ki*yaw_int);              % rudder angle command (rad)
+
+    % ship dynamics
+    u = [delta_c n_c]';
+    [xdot,u] = ship(x,u,nu_c,tau_wind);
+    
+    % store simulation data in a table (for testing)
+    simdata(i,:) = [t x(1:3)' x(4:6)' x(7) x(8) u(1) u(2) u_d psi_d r_d];     
+ 
+    % Euler integration
+    yaw_last = yaw;
+    x = euler2(xdot,x,h);    
+    %add reference
+end
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% PLOTS
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+t       = simdata(:,1);                 % s
+u       = simdata(:,2);                 % m/s
+v       = simdata(:,3);                 % m/s
+r       = (180/pi) * simdata(:,4);      % deg/s
+x       = simdata(:,5);                 % m
+y       = simdata(:,6);                 % m
+psi     = (180/pi) * simdata(:,7);      % deg
+delta   = (180/pi) * simdata(:,8);      % deg
+n       = 60 * simdata(:,9);            % rpm
+delta_c = (180/pi) * simdata(:,10);     % deg
+n_c     = 60 * simdata(:,11);           % rpm
+u_d     = simdata(:,12);                % m/s
+psi_d   = (180/pi) * simdata(:,13);     % deg
+r_d     = (180/pi) * simdata(:,14);     % deg/s
+
+figure(1)
+figure(gcf)
+subplot(311)
+plot(y,x,'linewidth',2); axis('equal')
+title('North-East positions (m)'); xlabel('(m)'); ylabel('(m)'); 
+subplot(312)
+plot(t,psi,t,psi_d,'linewidth',2);
+title('Actual and desired yaw angles (deg)'); xlabel('time (s)');
+subplot(313)
+plot(t,r,t,r_d,'linewidth',2);
+title('Actual and desired yaw rates (deg/s)'); xlabel('time (s)');
+
+figure(2)
+figure(gcf)
+subplot(311)
+plot(t,u,t,u_d,'linewidth',2);
+title('Actual and desired surge velocities (m/s)'); xlabel('time (s)');
+subplot(312)
+plot(t,n,t,n_c,'linewidth',2);
+title('Actual and commanded propeller speed (rpm)'); xlabel('time (s)');
+subplot(313)
+plot(t,delta,t,delta_c,'linewidth',2);
+title('Actual and commanded rudder angles (deg)'); xlabel('time (s)');
