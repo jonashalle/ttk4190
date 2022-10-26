@@ -10,7 +10,7 @@ h  = 0.1;    % sampling time [s]
 Ns = 10000;    % no. of samples
 
 psi_ref = 10 * pi/180;  % desired yaw angle (rad)
-U_ref   = 10;            % desired surge speed (m/s)
+U_ref   = 9;            % desired surge speed (m/s)
 
 %Constants
 rho_a = 1.247;
@@ -26,7 +26,8 @@ eta = [0 0 0]';  %Posisjon
 nu  = [0.1 0 0]'; %Hastighet
 delta = 0;
 n = 0;
-x = [nu' eta' delta n]';
+Qm = 0;
+x = [nu' eta' delta n Qm]';
 
 
 
@@ -54,6 +55,7 @@ Ad = [0 1 0;
       -omega_ref^3 -(2*zeta+1)*omega_ref^2 -(2*zeta+1)*omega_ref];
 Bd = [0 0 omega_ref^3]';
 Cd = [1 1 0];
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % MAIN LOOP
@@ -109,7 +111,7 @@ for i=1:Ns+1
 
     % ship dynamics
     u = [delta_c n_c]';
-    [xdot,u] = ship(x,u,nu_c,tau_wind);
+    [xdot,u] = ship(x,u,nu_c,tau_wind,U_ref);
     
     % store simulation data in a table (for testing)
     simdata(i,:) = [t x(1:3)' x(4:6)' x(7) x(8) u(1) u(2) u_d psi_d r_d];     
