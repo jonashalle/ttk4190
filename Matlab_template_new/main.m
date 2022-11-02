@@ -2,13 +2,13 @@
 %
 % Author:           My name
 % Study program:    My study program
-clear;
+clear all;
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % USER INPUTS
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 h  = 0.1;    % sampling time [s]
-Ns = 10000;    % no. of samples
-
+Ns = 60000;    % no. of samples
+load WP.mat
 psi_ref = 10 * pi/180;  % desired yaw angle (rad)
 U_ref   = 9;            % desired surge speed (m/s)
 
@@ -22,7 +22,7 @@ Loa = 161;
 ALw = 10*Loa;
 
 % initial states
-eta = [0 0 0]';  %Posisjon
+eta = [0 0 -110*pi/180]';  %Posisjon
 nu  = [0.1 0 0]'; %Hastighet
 delta = 0;
 n = 0;
@@ -92,9 +92,10 @@ for i=1:Ns+1
         tau_wind = 0.5*rho_a*Vrw^2*[0 Ywind Nwind]';
     end
     
-    if t > 400
-        psi_ref = -20 * pi/180;  % desired yaw angle (rad)
-    end
+%     if t > 400
+%         psi_ref = -20 * pi/180;  % desired yaw angle (rad)
+%     end
+    
     % reference models
     xd_dot = Ad*xd+Bd*psi_ref;
     xd = euler2(xd_dot,xd,h);
@@ -106,7 +107,15 @@ for i=1:Ns+1
     r_c = r_d-x(3);
     % control law
     psi_integral = psi_integral + psi_c*h;
-    n_c = 10;                   % propeller speed (rps)
+    wind_up_lim = 5;
+    if psi_integral<-wind_up_lim
+        psi_integral=-wind_up_lim;
+
+    elseif psi_integral>wind_up_lim
+        psi_integral=wind_up_lim;
+    end 
+    n_c = 10;                % propeller speed (rps)
+     
     delta_c = (kp*psi_c+kd*r_c+ki*psi_integral);              % rudder angle command (rad)
 
     % ship dynamics
@@ -115,7 +124,7 @@ for i=1:Ns+1
     
     % store simulation data in a table (for testing)
     simdata(i,:) = [t x(1:3)' x(4:6)' x(7) x(8) u(1) u(2) u_d psi_d r_d];     
- 
+    psi_ref = guidance(simdata(i,5),simdata(i,6),WP);
     % Euler integration
     x = euler2(xdot,x,h);    
     %add reference
@@ -162,3 +171,5 @@ title('Actual and commanded propeller speed (rpm)'); xlabel('time (s)');
 subplot(313)
 plot(t,delta,t,delta_c,'linewidth',2);
 title('Actual and commanded rudder angles (deg)'); xlabel('time (s)');
+
+pathplotter(x,y)

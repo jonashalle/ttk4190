@@ -1,4 +1,4 @@
-function [xdot,u] = ship(x,u,nu_c,tau_ext, U_ref)
+ function [xdot,u] = ship(x,u,nu_c,tau_ext, U_ref)
 % [xdot,u] = ship(x,u,nu_c,tau_ext) returns the time derivative of the state vector: 
 % x = [ u v r x y psi delta n ]' for a ship with L = 161 m where:
 %

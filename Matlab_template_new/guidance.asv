@@ -1,0 +1,27 @@
+function [chi_d] = guidance(x, y,wp)
+persistent k;      % active waypoint index (initialized by: clear LOSchi)
+persistent xk yk;  % active waypoint (xk, yk) corresponding to integer k
+persistent chi_f;
+
+if isempty(k)
+    k=1
+    xk = wp(1,k)
+    yk = wp(2,k)
+end
+
+delta = 1000;
+Kp = 1/delta;
+
+n = length(wp(1,:));
+
+if k<n
+    xk_next = wp(1,1+k);
+    yk_next = wp(2,1+k);
+else
+    xk_next = wp(1,n);
+    yk_next = wp(2,n);
+end
+
+pi_p = atan2((yk_next-yk), (xk_next-xk));
+
+y_error =  -(x-xk) * sin(pi_h) + (y-yk) * cos(pi_h);

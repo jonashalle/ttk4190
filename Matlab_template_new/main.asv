@@ -8,9 +8,9 @@ clear;
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 h  = 0.1;    % sampling time [s]
 Ns = 10000;    % no. of samples
-
+wp = load(WP.mat)
 psi_ref = 10 * pi/180;  % desired yaw angle (rad)
-U_ref   = 7;            % desired surge speed (m/s)
+U_ref   = 9;            % desired surge speed (m/s)
 
 %Constants
 rho_a = 1.247;
@@ -22,20 +22,14 @@ Loa = 161;
 ALw = 10*Loa;
 
 % initial states
-eta = [0 0 0]';  %Posisjon
+eta = [0 0 110*pi/180]';  %Posisjon
 nu  = [0.1 0 0]'; %Hastighet
 delta = 0;
 n = 0;
-x = [nu' eta' delta n]';
+Qm = 0;
+x = [nu' eta' delta n Qm]';
 
-xd = [0 0 0];
-xd_dot = [0 0 0];
-omega_ref = 0.03;
-Ad = [0 1 0;
-      0 0 1;
-      -omega_ref^3 -(2*zeta+1)*omega_ref^2 -(2*zeta+1)*omega_ref];
-Bd = [0 0 omega_ref^3]';
-Cd = [1 1 0];
+
 
 
 
@@ -51,13 +45,24 @@ kp = m*omega_n^2;
 ki = omega_n/10*kp;
 kd = 2*zeta*omega_n*m-d;
 pid_params = [kp ki kd];
+
+%reference model
+xd = [0 0 0]';
+xd_dot = [0 0 0]';
+omega_ref = 0.03;
+Ad = [0 1 0;
+      0 0 1;
+      -omega_ref^3 -(2*zeta+1)*omega_ref^2 -(2*zeta+1)*omega_ref];
+Bd = [0 0 omega_ref^3]';
+Cd = [1 1 0];
+
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % MAIN LOOP
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 simdata = zeros(Ns+1,14);       % table of simulation data
 tau_wind = [0 0 0]';
-yaw_last = 0;
-yaw_int = 0;
+psi_integral = 0;
 for i=1:Ns+1
     
     t = (i-1) * h;              % time (s)
@@ -69,25 +74,27 @@ for i=1:Ns+1
     nu_c = [ uc vc 0 ]';
     
     % wind disturbance
-    if t > 200
-    
+    if t > 200   
 
-    uw = Vw*cosd(Bv_w-x(6));
-    vw = Vw*sind(Bv_w-x(6));
-    u_rw = x(1)-uw;
-    v_rw = x(2)-vw;
-    Vrw = sqrt(u_rw^2+v_rw^2);
-
-    gamma_rw = -atan2(v_rw,u_rw);
-    C_Y = 0.95*sin(gamma_rw);
-    C_N = 0.15*sin(2*gamma_rw);
+        uw = Vw*cosd(Bv_w-x(6));
+        vw = Vw*sind(Bv_w-x(6));
+        u_rw = x(1)-uw;
+        v_rw = x(2)-vw;
+        Vrw = sqrt(u_rw^2+v_rw^2);
     
-    Ywind = C_Y*ALw;
-    Nwind = C_N*ALw*Loa;
-    
-    tau_wind = 0.5*rho_a*Vrw^2*[0 Ywind Nwind]';
+        gamma_rw = -atan2(v_rw,u_rw);
+        C_Y = 0.95*sin(gamma_rw);
+        C_N = 0.15*sin(2*gamma_rw);
+        
+        Ywind = C_Y*ALw;
+        Nwind = C_N*ALw*Loa;
+        
+        tau_wind = 0.5*rho_a*Vrw^2*[0 Ywind Nwind]';
     end
     
+%     if t > 400
+%         psi_ref = -20 * pi/180;  % desired yaw angle (rad)
+%     end
     
     % reference models
     xd_dot = Ad*xd+Bd*psi_ref;
@@ -100,19 +107,17 @@ for i=1:Ns+1
     r_c = r_d-x(3);
     % control law
     psi_integral = psi_integral + psi_c*h;
-
     n_c = 10;                   % propeller speed (rps)
-    delta_c = (kp*psi_c+kd*yaw_dot+ki*psi_integral);              % rudder angle command (rad)
+    delta_c = (kp*psi_c+kd*r_c+ki*psi_integral);              % rudder angle command (rad)
 
     % ship dynamics
     u = [delta_c n_c]';
-    [xdot,u] = ship(x,u,nu_c,tau_wind);
+    [xdot,u] = ship(x,u,nu_c,tau_wind,U_ref);
     
     % store simulation data in a table (for testing)
     simdata(i,:) = [t x(1:3)' x(4:6)' x(7) x(8) u(1) u(2) u_d psi_d r_d];     
- 
+    psi_ref = guidance(simdata(i,5),simdata(i,6),WP);
     % Euler integration
-    yaw_last = yaw;
     x = euler2(xdot,x,h);    
     %add reference
 end
