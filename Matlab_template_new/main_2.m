@@ -2,145 +2,122 @@
 %
 % Author:           My name
 % Study program:    My study program
-clear all;
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % USER INPUTS
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+clear all;
 h  = 0.1;    % sampling time [s]
-Ns = 60000;    % no. of samples
-load WP.mat
-psi_ref = 10 * pi/180;  % desired yaw angle (rad)
-U_ref   = 9;            % desired surge speed (m/s)
+Ns = 10000;    % no. of samples
 
-%Constants
-rho_a = 1.247;
-Vc = 1;
-Bv_c = 45;
-Bv_w = 135;
-Vw = 10;
-Loa = 161;
-ALw = 10*Loa;
-
+psi_ref = 10 * pi/180;  
+U_ref   = 10;           
+psi_ref2 = -20 *pi/180; 
 % initial states
-eta = [0 0 -110*pi/180]';  %Posisjon
-nu  = [0.1 0 0]'; %Hastighet
+eta = [0 0 0]';
+nu  = [0.1 0 0]';
 delta = 0;
 n = 0;
-Qm = 0;
-x = [nu' eta' delta n Qm]';
+x = [nu' eta' delta n]';
+L_oa = 161;
+A_Lw = 10*L_oa;
+V_w = 10;
+b_Vw = 135;
 
-
-
-
-
-% PID controller
-omega_b = 0.06;
-zeta = 1;
-T = 169.546;
+a_max = 0.5*pi/180;
+r_max = pi/180;
+%% PID
+w_b = 0.06;
+damping = 1;
+w_n = 1/(sqrt(1-2*damping^2+sqrt(4*damping^4-4*damping^2+2)))*w_b;
 K = 0.0075;
-m = T/K;
-d = 1/K;
-omega_n = 1/(sqrt(1-2*zeta^2+sqrt(4*zeta^4-4*zeta^2+2)))*omega_b;
-kp = m*omega_n^2;
-ki = omega_n/10*kp;
-kd = 2*zeta*omega_n*m-d;
-pid_params = [kp ki kd];
+T = 169.5493;
+m1 = T/K;
+kp = m1*w_n^2;
+kd = 2*damping*w_n*m1-1/K;
+ki = w_n/10*kp;
 
-%reference model
-xd = [0 0 0]';
-xd_dot = [0 0 0]';
-omega_ref = 0.03;
-Ad = [0 1 0;
-      0 0 1;
-      -omega_ref^3 -(2*zeta+1)*omega_ref^2 -(2*zeta+1)*omega_ref];
-Bd = [0 0 omega_ref^3]';
+x_d= [0 0 0]';
+x_ddot = [0 0 0]';
+wref = 0.03;
+Ad = [0 1 0; 0 0 1; -wref^3 -(2*damping+1)*wref^2 -(2*damping+1)*wref]
+Bd = [0 0 wref^3]';
 Cd = [1 1 0];
-
-
+psi_int = 0;
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % MAIN LOOP
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-simdata = zeros(Ns+1,18);       % table of simulation data
-tau_wind = [0 0 0]';
-psi_integral = 0;
+simdata = zeros(Ns+1,16);       % table of simulation data
+tau_wind =[0 0 0]';
+yaw_last = 0;
+yaw_int = 0;
 for i=1:Ns+1
     
-    t = (i-1) * h;              % time (s)
+    t = (i-1) * h;              % time (s
+    
     
     % current disturbance
     eta_n = x(4:6);
-    uc = cosd(Bv_c)*Vc;
-    vc = sind(Bv_c)*Vc;
+    uc = cosd(45);
+    vc = sind(45);
     nu_c = [ uc vc 0 ]';
-    
-    % wind disturbance
-    if t > 200   
+    %nu_c = [0 0 0]';
+%     if t > 400 
+%         psi_ref = psi_ref2;
+%     end
 
-        uw = Vw*cosd(Bv_w-x(6));
-        vw = Vw*sind(Bv_w-x(6));
-        u_rw = x(1)-uw;
-        v_rw = x(2)-vw;
-        Vrw = sqrt(u_rw^2+v_rw^2);
+
+     
     
-        gamma_rw = -atan2(v_rw,u_rw);
-        C_Y = 0.95*sin(gamma_rw);
-        C_N = 0.15*sin(2*gamma_rw);
-        
-        Ywind = C_Y*ALw;
-        Nwind = C_N*ALw*Loa;
-        
-        tau_wind = 0.5*rho_a*Vrw^2*[0 Ywind Nwind]';
+    nu_b = Rzyx(0, 0, x(6))'*nu_c;  
+    if t > 200 
+        % wind disturbance
+        u_w = V_w *cosd(b_Vw-x(6));
+        v_w = V_w *sind(b_Vw-x(6));
+        u_rw = x(1) - u_w;
+        v_rw = x(2) - v_w;
+        V_rw1 = sqrt(u_rw^2 + v_rw^2); 
+        y_rw = -atan2((v_rw),(u_rw));
+        C_Y = 0.95*sin(y_rw);
+        C_N = 0.15*sin(2*y_rw);
+        q = 1/2*1.247*V_rw1^2;
+        Ywind = C_Y*A_Lw;
+        Nwind = C_N*A_Lw*L_oa;
+        tau_wind = q*[0 Ywind Nwind]';
     end
-    %Heading and crab
-     nu_b = Rzyx(0, 0, x(6))'*nu_c;  
      nu_n = Rzyx(0, 0, x(6))*x(1:3); 
+
      chi = atan2(nu_n(2), nu_n(1));
      crab_angle = chi - eta_n(3);
      nu_r = x(1:3) - nu_b;
      beta = atan2(nu_r(2), nu_r(1));
-    
-%     if t > 400
-%         psi_ref = -20 * pi/180;  % desired yaw angle (rad)
-%     end
-    [chi_d,stop] = guidance(x(4),x(5),WP);
-    if stop == true
-        U_ref = 0;
-    end
-    psi_ref = chi_d;
-    %psi_ref = chi_d-crab_angle;
-    
+   
     % reference models
-    xd_dot = Ad*xd+Bd*psi_ref;
-    xd = euler2(xd_dot,xd,h);
-    psi_d = xd(1);
-    r_d = xd(2);
+
+    x_ddot = Ad*x_d+ Bd*psi_ref;
+
+    psi_d = x_d(1);
+    r_d = x_d(2);
+    x_d= euler2(x_ddot,x_d,h);
     u_d = U_ref;
-    
     psi_c = psi_d - x(6);
-    r_c = r_d-x(3);
+    r_c = r_d -x(3);
+
     % control law
-    psi_integral = psi_integral + psi_c*h;
-    wind_up_lim = 5;
-    if psi_integral<-wind_up_lim
-        psi_integral=-wind_up_lim;
-
-    elseif psi_integral>wind_up_lim
-        psi_integral=wind_up_lim;
-    end 
-    n_c = 10;                % propeller speed (rps)
-     
-    delta_c = (kp*psi_c+kd*r_c+ki*psi_integral);              % rudder angle command (rad)
-
+    psi_int = psi_int + h*psi_c;
+    delta_c = (kp*psi_c + ki*psi_int + kd*r_c);
+    n_c = 10;             
+    
     % ship dynamics
     u = [delta_c n_c]';
-    [xdot,u] = ship(x,u,nu_c,tau_wind,U_ref);
+    [xdot,u] = ship(x,u,nu_c,tau_wind,u_d);
     
-    % store simulation data in a table (for testing)    
-    simdata(i,:) = [t x(1:3)' x(4:6)' x(7) x(8) u(1) u(2) u_d psi_d r_d crab_angle beta chi_d chi];   
-    
+    % store simulation data in a table (for testing)
+    simdata(i,:) = [t x(1:3)' x(4:6)' x(7) x(8) u(1) u(2) u_d psi_d r_d crab_angle beta];     
+ 
     % Euler integration
+ 
     x = euler2(xdot,x,h);    
-    %add reference
 end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -162,8 +139,6 @@ psi_d   = (180/pi) * simdata(:,13);     % deg
 r_d     = (180/pi) * simdata(:,14);     % deg/s
 crab_angle   = (180/pi) * simdata(:,15);     % deg
 sideslip = (180/pi) * simdata(:,16);     % deg
-chi_d = (180/pi) * simdata(:,17);     % deg
-chi = (180/pi) * simdata(:,18);     % deg
 
 figure(1)
 figure(gcf)
@@ -189,6 +164,7 @@ subplot(313)
 plot(t,delta,t,delta_c,'linewidth',2);
 title('Actual and commanded rudder angles (deg)'); xlabel('time (s)');
 
+
 figure(3)
 hold on
 plot(t,crab_angle,t,sideslip,'linewidth',2);
@@ -197,12 +173,3 @@ legend("Crab angle","sideslip")
 %    title('Crab angle vs. sideslip (deg) (V_c = 0)'); xlabel('time (s)');
 title('Crab angle vs sideslip with velocity'); xlabel('time (s)');
 grid on
-
-figure(4)
-hold on
-plot(t,chi,t,chi_d,'linewidth',2)
-hold off;
-legend('chi','chi desired')
-title('Actual and commanded course'); xlabel('time (s)');
-pathplotter(x,y)
-hold off
